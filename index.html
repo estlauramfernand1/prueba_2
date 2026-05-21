@@ -68,13 +68,13 @@
   const protocoloWS = window.location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocoloWS}://${IP_PC}:8765`);
 
-  // ── VARIABLES DE CONTROL DEL MOTOR (MODO RÁFAGA / MENOS SENSIBLE) ──
+  // ── VARIABLES AL EXTREMO (SÚPER INERTE / MENOS SENSIBLE) ──
   let velocidadActual = 0; 
   const VELOCIDAD_MAXIMA = 100; // Límite del velocímetro
-  const UMBRAL_SACUDIDA = 35;   // EXTREMADAMENTE ALTO. Solo movimientos muy rápidos se toman en cuenta.
-  const BLOQUE_VELOCIDAD = 20;  // Suma de 20 en 20 por cada súper sacudida exitosa.
-  const DESACELERACION = 0.5;   // Desaceleración progresiva (freno de motor natural).
-  let listoParaSiguienteSacudida = true; // Evita rebotes involuntarios en una misma sacudida.
+  const UMBRAL_SACUDIDA = 48;   // ANTES 35. Nivel extremo: ignora casi todo salvo latigazos de brazo muy rápidos.
+  const BLOQUE_VELOCIDAD = 10;  // ANTES 20. Ahora sube más lento, te premia con menos km/h por golpe.
+  const DESACELERACION = 0.3;   // Baja más lento la velocidad para compensar lo difícil que es subirla.
+  let listoParaSiguienteSacudida = true; 
 
   ws.onopen  = () => {
     document.getElementById("estado").textContent = "Ya estás conectado";
@@ -177,18 +177,18 @@
       });
     });
 
-    // 2. ACELERÓMETRO (Modificado para saltos fuertes de 20 en 20)
+    // 2. ACELERÓMETRO (Modificado con filtros ultra estrictos)
     window.addEventListener("devicemotion", (e) => {
       const a = e.accelerationIncludingGravity;
       if (!a) return;
       
       const fuerzaSacudida = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
       
-      // Filtra movimientos suaves y exige un golpe fuerte (> 35)
+      // Filtra movimientos suaves y exige un golpe extremo (> 48)
       if (fuerzaSacudida > UMBRAL_SACUDIDA && listoParaSiguienteSacudida) {
-        listoParaSiguienteSacudida = false; // Bloquea lecturas repetidas del mismo golpe
+        listoParaSiguienteSacudida = false; 
         
-        // Aumenta de golpe la velocidad configurada
+        // Sumamos solo 10 km/h para que cueste el doble subir el marcador
         velocidadActual += BLOQUE_VELOCIDAD; 
         
         if (velocidadActual > VELOCIDAD_MAXIMA) {
@@ -199,10 +199,10 @@
         
         enviar({ sensor: "acelerometro", velocidad: Math.round(velocidadActual) });
 
-        // Cooldown de 300ms para obligar a regresar el brazo y volver a sacudir
+        // Cooldown de 250ms ligeramente más rápido para permitir ráfagas frenéticas seguidas
         setTimeout(() => {
           listoParaSiguienteSacudida = true;
-        }, 300);
+        }, 250);
       }
     });
   }
