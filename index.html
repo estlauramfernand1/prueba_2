@@ -16,7 +16,7 @@
     h2    { font-size: 1.6em; }
     #estado { font-size: 1.1em; color: #00ff88; }
     #datos  { font-size: 1.2em; color: #aaa; font-weight: bold; }
-    #sacudida_val { font-size: 1.3em; color: #ffff00; font-weight: bold; } /* Más grande para ver la velocidad */
+    #sacudida_val { font-size: 1.3em; color: #ffff00; font-weight: bold; }
 
     .botones {
       display: flex; justify-content: space-between;
@@ -68,14 +68,13 @@
   const protocoloWS = window.location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocoloWS}://${IP_PC}:8765`);
 
-  // ── VARIABLES DE CONTROL DEL MOTOR (NUEVO) ─────────────────
-    // ── VARIABLES DE CONTROL DEL MOTOR (AJUSTADAS: MENOS SENSIBLE) ──
+  // ── VARIABLES DE CONTROL DEL MOTOR (MODO RÁFAGA / MENOS SENSIBLE) ──
   let velocidadActual = 0; 
   const VELOCIDAD_MAXIMA = 100; // Límite del velocímetro
-  const UMBRAL_SACUDIDA = 22;     // ANTES 14. Ahora necesitas agitar el doble de fuerte para que empiece a acelerar.
-  const SENSIBILIDAD = 0.6;     // ANTES 1.5. Cada sacudida suma muy poca velocidad (sube más lento).
-  const DESACELERACION = 0.4;   // ANTES 0.8. Pierde velocidad más despacio para que no se detenga de golpe al reajustar la mano.
-
+  const UMBRAL_SACUDIDA = 35;   // EXTREMADAMENTE ALTO. Solo movimientos muy rápidos se toman en cuenta.
+  const BLOQUE_VELOCIDAD = 20;  // Suma de 20 en 20 por cada súper sacudida exitosa.
+  const DESACELERACION = 0.5;   // Desaceleración progresiva (freno de motor natural).
+  let listoParaSiguienteSacudida = true; // Evita rebotes involuntarios en una misma sacudida.
 
   ws.onopen  = () => {
     document.getElementById("estado").textContent = "Ya estás conectado";
@@ -178,17 +177,19 @@
       });
     });
 
-    // 2. ACELERÓMETRO (Modificado para simular pedal de aceleración)
+    // 2. ACELERÓMETRO (Modificado para saltos fuertes de 20 en 20)
     window.addEventListener("devicemotion", (e) => {
       const a = e.accelerationIncludingGravity;
       if (!a) return;
       
       const fuerzaSacudida = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
       
-      // Si agitas por encima del umbral, sumas velocidad (pisas el acelerador)
-      if (fuerzaSacudida > UMBRAL_SACUDIDA) {
-        const exceso = fuerzaSacudida - UMBRAL_SACUDIDA;
-        velocidadActual += exceso * SENSIBILIDAD;
+      // Filtra movimientos suaves y exige un golpe fuerte (> 35)
+      if (fuerzaSacudida > UMBRAL_SACUDIDA && listoParaSiguienteSacudida) {
+        listoParaSiguienteSacudida = false; // Bloquea lecturas repetidas del mismo golpe
+        
+        // Aumenta de golpe la velocidad configurada
+        velocidadActual += BLOQUE_VELOCIDAD; 
         
         if (velocidadActual > VELOCIDAD_MAXIMA) {
           velocidadActual = VELOCIDAD_MAXIMA;
@@ -197,6 +198,11 @@
         document.getElementById("sacudida_val").textContent = `Velocidad: ${Math.round(velocidadActual)} km/h`;
         
         enviar({ sensor: "acelerometro", velocidad: Math.round(velocidadActual) });
+
+        // Cooldown de 300ms para obligar a regresar el brazo y volver a sacudir
+        setTimeout(() => {
+          listoParaSiguienteSacudida = true;
+        }, 300);
       }
     });
   }
