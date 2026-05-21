@@ -69,11 +69,13 @@
   const ws = new WebSocket(`${protocoloWS}://${IP_PC}:8765`);
 
   // ── VARIABLES DE CONTROL DEL MOTOR (NUEVO) ─────────────────
+    // ── VARIABLES DE CONTROL DEL MOTOR (AJUSTADAS: MENOS SENSIBLE) ──
   let velocidadActual = 0; 
   const VELOCIDAD_MAXIMA = 100; // Límite del velocímetro
-  const UMBRAL_SACUDIDA = 14;     // Qué tan fuerte hay que agitar para acelerar
-  const SENSIBILIDAD = 1.5;     // Cuánto gas mete cada sacudida
-  const DESACELERACION = 0.8;   // Cuánto frena por segundo de forma natural
+  const UMBRAL_SACUDIDA = 22;     // ANTES 14. Ahora necesitas agitar el doble de fuerte para que empiece a acelerar.
+  const SENSIBILIDAD = 0.6;     // ANTES 1.5. Cada sacudida suma muy poca velocidad (sube más lento).
+  const DESACELERACION = 0.4;   // ANTES 0.8. Pierde velocidad más despacio para que no se detenga de golpe al reajustar la mano.
+
 
   ws.onopen  = () => {
     document.getElementById("estado").textContent = "Ya estás conectado";
