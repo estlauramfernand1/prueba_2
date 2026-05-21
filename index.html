@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Cohetes Espaciales</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial; text-align: center;
+      background: #0a0a2e; color: white;
+      height: 100vh; display: flex;
+      flex-direction: column; justify-content: space-around;
+      padding: 20px; user-select: none;
+    }
+    h2    { font-size: 1.6em; }
+    #estado { font-size: 1.1em; color: #00ff88; }
+    #datos  { font-size: 1.2em; color: #aaa; font-weight: bold; }
+    #sacudida_val { font-size: 1.3em; color: #ffff00; font-weight: bold; } /* Más grande para ver la velocidad */
+
+    .botones {
+      display: flex; justify-content: space-between;
+      gap: 20px; margin-top: 10px;
+    }
+    .btn {
+      flex: 1; padding: 40px 0; font-size: 2em;
+      background: #1a1a5e; color: white;
+      border: 2px solid #00ff88; border-radius: 16px;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+    }
+    .btn:active { background: #00ff88; color: black; }
+
+    /* Estilos para los botones de control de sensores */
+    .btn-sensor {
+      padding: 12px 24px; font-size: 1em;
+      color: white; border: none; border-radius: 10px;
+      margin: 5px auto; cursor: pointer; display: block;
+    }
+    #btnPermiso { background: #e74c3c; }
+    #btnModoPrueba { background: #3498db; }
+  </style>
+</head>
+<body>
+
+  <h2>Carrera Espacial</h2>
+  <div id="estado">Conectando...</div>
+  <div id="datos">Orientación: —</div>
+  <div id="sacudida_val">Velocidad: 0 km/h</div>
+
+  <!-- Botón original para iPhone cuando ya está conectado -->
+  <button id="btnPermiso" class="btn-sensor" style="display:none" onclick="pedirPermiso()">
+    Activar sensores (iPhone)
+  </button>
+
+  <!-- Botón para forzar la prueba local sin esperar conexión del WebSocket -->
+  <button id="btnModoPrueba" class="btn-sensor" onclick="forzarPruebaLocal()">
+    Probar Sensores en Local 🛠️
+  </button>
+
+  <div class="botones">
+    <button class="btn" id="btnIzq">⬅</button>
+    <button class="btn" id="btnDer">➡</button>
+  </div>
+
+<script>
+  const IP_PC = "10.251.226.241";
+  
+  const protocoloWS = window.location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(`${protocoloWS}://${IP_PC}:8765`);
+
+  // ── VARIABLES DE CONTROL DEL MOTOR (NUEVO) ─────────────────
+  let velocidadActual = 0; 
+  const VELOCIDAD_MAXIMA = 100; // Límite del velocímetro
+  const UMBRAL_SACUDIDA = 14;     // Qué tan fuerte hay que agitar para acelerar
+  const SENSIBILIDAD = 1.5;     // Cuánto gas mete cada sacudida
+  const DESACELERACION = 0.8;   // Cuánto frena por segundo de forma natural
+
+  ws.onopen  = () => {
+    document.getElementById("estado").textContent = "Ya estás conectado";
+    document.getElementById("estado").style.color = "#00ff88";
+    document.getElementById("btnModoPrueba").style.display = "none"; 
+    iniciarSensores();
+  };
+  ws.onerror = () => {
+    document.getElementById("estado").textContent = "Error de conexión (Aún puedes usar la prueba local)";
+    document.getElementById("estado").style.color = "#ff4444";
+  };
+  ws.onclose = () => {
+    document.getElementById("estado").textContent = "Te encuentras desconectado";
+    document.getElementById("estado").style.color = "#ff4444";
+  };
+
+  function enviar(datos) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(datos));
+    }
+  }
+
+  // ── BOTONES CORREGIDOS ──────────────────────────────────────
+  document.getElementById("btnIzq").addEventListener("touchstart", () => enviar({ boton: "izq" }));
+  document.getElementById("btnDer").addEventListener("touchstart", () => enviar({ boton: "der" }));
+  document.getElementById("btnIzq").addEventListener("click", () => enviar({ boton: "izq" }));
+  document.getElementById("btnDer").addEventListener("click", () => enviar({ boton: "der" }));
+
+  // ── SENSORES ─────────────────────────────────────────
+  function iniciarSensores() {
+    if (typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function") {
+      document.getElementById("btnPermiso").style.display = "block";
+    } else {
+      activarSensores();
+    }
+  }
+
+  function pedirPermiso() {
+    DeviceOrientationEvent.requestPermission().then(r => {
+      if (r === "granted") {
+        activarSensores();
+        document.getElementById("btnPermiso").style.display = "none";
+      }
+    }).catch(console.error);
+  }
+
+  forzarPruebaLocal = () => {
+    document.getElementById("estado").textContent = "Modo Prueba Local Activo";
+    document.getElementById("estado").style.color = "#ffaa00";
+    document.getElementById("btnModoPrueba").style.display = "none";
+
+    if (typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function") {
+      DeviceOrientationEvent.requestPermission().then(r => {
+        if (r === "granted") {
+          activarSensores();
+        } else {
+          alert("Permiso denegado para la prueba.");
+        }
+      }).catch(console.error);
+    } else {
+      activarSensores();
+    }
+  }
+
+  function activarSensores() {
+    // Loop de desaceleración constante (Freno de motor automático cada 100ms)
+    setInterval(() => {
+      if (velocidadActual > 0) {
+        velocidadActual -= DESACELERACION;
+        if (velocidadActual < 0) velocidadActual = 0;
+        
+        document.getElementById("sacudida_val").textContent = `Velocidad: ${Math.round(velocidadActual)} km/h`;
+        
+        // Envía la velocidad actual al backend constantemente si el carro se mueve
+        enviar({ sensor: "acelerometro", velocidad: Math.round(velocidadActual) });
+      }
+    }, 100);
+
+    // 1. GIRÓSCOPO
+    window.addEventListener("deviceorientation", (e) => {
+      const alpha = e.alpha !== null ? e.alpha.toFixed(1) : "0.0";
+      const beta = e.beta !== null ? e.beta.toFixed(1) : "0.0";
+      const gamma = e.gamma !== null ? e.gamma.toFixed(1) : "0.0";
+
+      if (e.alpha === null && e.beta === null && e.gamma === null) {
+        document.getElementById("datos").textContent = "Moviendo... (Si no cambia, verifica HTTPS)";
+        return;
+      }
+
+      document.getElementById("datos").style.color = "#00ff88";
+      document.getElementById("datos").textContent = `X(β): ${beta}° | Y(γ): ${gamma}°`;
+      
+      enviar({
+        sensor: "giroscopo",
+        alpha: parseFloat(alpha),
+        beta: parseFloat(beta),
+        gamma: parseFloat(gamma)
+      });
+    });
+
+    // 2. ACELERÓMETRO (Modificado para simular pedal de aceleración)
+    window.addEventListener("devicemotion", (e) => {
+      const a = e.accelerationIncludingGravity;
+      if (!a) return;
+      
+      const fuerzaSacudida = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
+      
+      // Si agitas por encima del umbral, sumas velocidad (pisas el acelerador)
+      if (fuerzaSacudida > UMBRAL_SACUDIDA) {
+        const exceso = fuerzaSacudida - UMBRAL_SACUDIDA;
+        velocidadActual += exceso * SENSIBILIDAD;
+        
+        if (velocidadActual > VELOCIDAD_MAXIMA) {
+          velocidadActual = VELOCIDAD_MAXIMA;
+        }
+        
+        document.getElementById("sacudida_val").textContent = `Velocidad: ${Math.round(velocidadActual)} km/h`;
+        
+        enviar({ sensor: "acelerometro", velocidad: Math.round(velocidadActual) });
+      }
+    });
+  }
+</script>
+</body>
+</html>
