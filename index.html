@@ -16,7 +16,7 @@
     h2    { font-size: 1.6em; }
     #estado { font-size: 1.1em; color: #00ff88; }
     #datos  { font-size: 1.2em; color: #aaa; font-weight: bold; }
-    #sacudida_val { font-size: 1.3em; color: #ffff00; font-weight: bold; }
+    #sacudida_val { font-size: 1.3em; color: #c4c44b; font-weight: bold; } /* Más grande para ver la velocidad */
 
     .botones {
       display: flex; justify-content: space-between;
@@ -43,8 +43,8 @@
 <body>
 
   <h2>Carrera Espacial</h2>
-  <div id="estado">Conectando...</div>
-  <div id="datos">Orientación: —</div>
+  <div id="estado">Te estas conectando ...</div>
+  <div id="datos">Tu posición: —</div>
   <div id="sacudida_val">Velocidad: 0 km/h</div>
 
   <!-- Botón original para iPhone cuando ya está conectado -->
@@ -54,7 +54,7 @@
 
   <!-- Botón para forzar la prueba local sin esperar conexión del WebSocket -->
   <button id="btnModoPrueba" class="btn-sensor" onclick="forzarPruebaLocal()">
-    Probar Sensores en Local 🛠️
+    Probar Sensores Para Acelerar
   </button>
 
   <div class="botones">
@@ -68,13 +68,13 @@
   const protocoloWS = window.location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocoloWS}://${IP_PC}:8765`);
 
-  // ── VARIABLES AL EXTREMO (SÚPER INERTE / MENOS SENSIBLE) ──
+  // VARIABLES PARA QUE SEA SUPER SENCIBLE
   let velocidadActual = 0; 
   const VELOCIDAD_MAXIMA = 100; // Límite del velocímetro
-  const UMBRAL_SACUDIDA = 48;   // ANTES 35. Nivel extremo: ignora casi todo salvo latigazos de brazo muy rápidos.
-  const BLOQUE_VELOCIDAD = 10;  // ANTES 20. Ahora sube más lento, te premia con menos km/h por golpe.
-  const DESACELERACION = 0.3;   // Baja más lento la velocidad para compensar lo difícil que es subirla.
-  let listoParaSiguienteSacudida = true; 
+  const UMBRAL_SACUDIDA = 22;     
+  const SENSIBILIDAD = 0.6;     
+  const DESACELERACION = 0.4;   // Pierde velocidad más despacio para que no se detenga de golpe al reajustar la mano.
+
 
   ws.onopen  = () => {
     document.getElementById("estado").textContent = "Ya estás conectado";
@@ -142,7 +142,7 @@
   }
 
   function activarSensores() {
-    // Loop de desaceleración constante (Freno de motor automático cada 100ms)
+    // Loop de desaceleración constante aqui como que freno de motor automático cada 100ms
     setInterval(() => {
       if (velocidadActual > 0) {
         velocidadActual -= DESACELERACION;
@@ -177,19 +177,17 @@
       });
     });
 
-    // 2. ACELERÓMETRO (Modificado con filtros ultra estrictos)
+    // 2. ACELERÓMETRO (Modificado para simular pedal de aceleración)
     window.addEventListener("devicemotion", (e) => {
       const a = e.accelerationIncludingGravity;
       if (!a) return;
       
       const fuerzaSacudida = Math.abs(a.x || 0) + Math.abs(a.y || 0) + Math.abs(a.z || 0);
       
-      // Filtra movimientos suaves y exige un golpe extremo (> 48)
-      if (fuerzaSacudida > UMBRAL_SACUDIDA && listoParaSiguienteSacudida) {
-        listoParaSiguienteSacudida = false; 
-        
-        // Sumamos solo 10 km/h para que cueste el doble subir el marcador
-        velocidadActual += BLOQUE_VELOCIDAD; 
+      // Si agitas por encima del umbral, sumas velocidad (pisas el acelerador)
+      if (fuerzaSacudida > UMBRAL_SACUDIDA) {
+        const exceso = fuerzaSacudida - UMBRAL_SACUDIDA;
+        velocidadActual += exceso * SENSIBILIDAD;
         
         if (velocidadActual > VELOCIDAD_MAXIMA) {
           velocidadActual = VELOCIDAD_MAXIMA;
@@ -198,11 +196,6 @@
         document.getElementById("sacudida_val").textContent = `Velocidad: ${Math.round(velocidadActual)} km/h`;
         
         enviar({ sensor: "acelerometro", velocidad: Math.round(velocidadActual) });
-
-        // Cooldown de 250ms ligeramente más rápido para permitir ráfagas frenéticas seguidas
-        setTimeout(() => {
-          listoParaSiguienteSacudida = true;
-        }, 250);
       }
     });
   }
